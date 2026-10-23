@@ -42,13 +42,19 @@ export function fmt(s: string, titleOf: (id: string) => string | undefined = () 
         .replace(/`([^`]+)`/g, '<code>$1</code>')
         .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
         .replace(/\[\[([a-z0-9-]+)(?:\|([^\]]+))?\]\]/g, (_m, id: string, label?: string) => {
-          const text = label ?? titleOf(id) ?? id
+          const text = label ?? linkText(titleOf(id) ?? id)
           return `<button type="button" class="term-link" data-codex="${id}">${text}</button>`
         })
         .replace(/\n/g, '<br>')
       return `<p>${html}</p>`
     })
     .join('')
+}
+
+/** A codex title as it reads mid-sentence: "Pool (zpool)" becomes "pool", acronyms stay as they are. */
+function linkText(title: string) {
+  const plain = title.split(' (')[0]
+  return /^[A-Z][a-z]/.test(plain) && !plain.startsWith('Merkle') ? plain[0].toLowerCase() + plain.slice(1) : plain
 }
 
 export const ICON = {
