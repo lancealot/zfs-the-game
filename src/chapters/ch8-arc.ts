@@ -57,7 +57,7 @@ export const chapter8: ChapterDef = {
       q: 'A hit on the MRU ghost list makes the ARC…',
       options: ['Give more of its space to MRU', 'Give more of its space to MFU', 'Flush the whole cache', 'Delete the ghost and do nothing'],
       answer: 0,
-      explain: 'A recently evicted block was wanted again, so MRU was too small. The target p grows. An MFU ghost hit does the opposite.',
+      explain: 'A recently evicted block was wanted again, so MRU was too small: the target p grows (and the block comes back into MFU, since it has now been used twice). An MFU ghost hit does the opposite.',
     },
   ],
 
@@ -68,7 +68,7 @@ export const chapter8: ChapterDef = {
 
     // ---------------------------------------------------------------- scene
     const disk = new Platter(10, 2, 0.75, 'pool disks')
-    disk.position.set(0, 0, -5)
+    disk.position.set(0, 0, -7.5)
     root.add(disk)
     const appMarker = makeLabel('<b>app</b> reads', 'big')
     appMarker.position.set(0, 0.4, 5.2)
@@ -76,7 +76,7 @@ export const chapter8: ChapterDef = {
     const appPos = v3(0, 0.8, 5)
 
     // Cache window frame and p marker.
-    const frameMat = new THREE.MeshBasicMaterial({ color: C.uber, transparent: true, opacity: 0.18, depthWrite: false })
+    const frameMat = new THREE.MeshBasicMaterial({ color: C.uber, transparent: true, opacity: 0.08, depthWrite: false })
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 1.25, 1.25), frameMat)
     frame.position.set(0, ROW_Y, 0)
     root.add(frame)
@@ -310,6 +310,7 @@ export const chapter8: ChapterDef = {
     hud.info(panel)
 
     function renderKeys() {
+      if (manual) hud.expandInfo(true)
       keysEl.replaceChildren(
         ...['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K'].map((k) =>
           h('button', { class: 'btn', style: { minWidth: '38px', padding: '6px 8px' }, disabled: !manual, onclick: () => !busy && void request(k) }, k),
@@ -392,7 +393,7 @@ export const chapter8: ChapterDef = {
     // -------------------------------------------------------------- script
     layout()
     renderKeys()
-    await ctx.fly(v3(0, 9, 17), v3(0, 2.2, 0), 2)
+    await ctx.fly(v3(0, 7.5, 17.5), v3(0, 2.2, -1.6), 2)
     ctx.objectives([
       { id: 'twice', text: 'Read a block twice and watch it move to MFU' },
       { id: 'fill', text: 'Run a working set until blocks get evicted' },
@@ -407,7 +408,7 @@ export const chapter8: ChapterDef = {
     )
     manual = true
     renderKeys()
-    ctx.say('The left half is **MRU** (blocks seen once recently), the right half **MFU** (seen at least twice). Read block **A** with the buttons on the right.')
+    ctx.say('The left half is **MRU** (blocks seen once recently), the right half **MFU** (seen at least twice). Read block **A** with the buttons in the panel.')
     await ctx.until(() => arc.where('A') === 'T1')
     ctx.say('A miss: A came up from disk into MRU. Now read **A again**.')
     await ctx.until(() => arc.where('A') === 'T2')

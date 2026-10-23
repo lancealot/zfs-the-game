@@ -4,7 +4,7 @@ import { h } from '../ui/dom'
 import { CowPool, type Blk, textBytes } from '../zfs/blocktree'
 import { fletcher4, cksumEqual, cksumShort } from '../zfs/checksum'
 import { TreeView } from '../scenes/treeView'
-import { describeBlock, describeUber } from '../scenes/inspect'
+import { describeBlock, describeUber, zdbUberText } from '../scenes/inspect'
 import { catBlocks, drawPixels, NOTES, bytesToText } from '../content/files'
 import { formatStatus } from '../zfs/status'
 
@@ -230,18 +230,7 @@ export const chapter2: ChapterDef = {
       (argv, line) => {
         const [cmd, a1] = argv
         if (cmd === 'zdb' && a1 === '-u') {
-          const u = pool.uber
-          term.print(
-            [
-              'Uberblock:',
-              '        magic = 0000000000bab10c',
-              '        version = 5000',
-              `        txg = ${u.txg}`,
-              '        guid_sum = 7804356107563362291',
-              `        timestamp = ${u.timestamp} UTC = ${new Date(u.timestamp * 1000).toUTCString()}`,
-              '        labels = 0 1 2 3',
-            ].join('\n'),
-          )
+          term.print(zdbUberText(pool))
           return true
         }
         if (cmd === 'zdb') {
@@ -249,7 +238,7 @@ export const chapter2: ChapterDef = {
           return true
         }
         if (cmd === 'ls') {
-          term.print('-rw-r--r--  1 root root  512K cat.png\n-rw-r--r--  1 root root   64K notes.txt')
+          term.print('-rw-r--r--  1 root root  512K cat.png\n-rw-r--r--  1 root root  128K notes.txt')
           return true
         }
         if (cmd === 'cat') {
@@ -346,7 +335,7 @@ export const chapter2: ChapterDef = {
       'notes.txt fits in one block, so its dnode points straight at the data, with no indirect block. The [[dva|DVA]] `<0:offset:size>` says: vdev 0, this byte offset. The hover line shows the matching slot on the platter.',
     )
     await ctx.next(
-      'Look at the sizes: `lsize` 128 KiB but `psize` only 24 KiB. Text compresses well, so [[compression|LZ4]] saved 80%. Click a cat.png block to compare: PNG data is already compressed, so ZFS stores it uncompressed.',
+      'Look at the sizes: `lsize` 128 KiB but `psize` only 24 KiB. Text compresses well, so [[compression|LZ4]] saved 80%. Click a cat.png block to compare: its PNG data is already compressed, so ZFS stores it uncompressed.',
     )
     await ctx.until(() => sawCat)
     await ctx.sleep(0.8)

@@ -5,6 +5,7 @@ import { fletcher4, cksumEqual, type Cksum } from '../zfs/checksum'
 import { noiseBytes } from '../zfs/blocktree'
 import { formatStatus, SEE } from '../zfs/status'
 import { catBlocks, drawPixels, NOTES, BUDGET, POEM } from '../content/files'
+import { ctime } from '../zfs/units'
 
 interface LBlock {
   file: string
@@ -70,13 +71,13 @@ export const chapter4: ChapterDef = {
     {
       q: 'A file appears under "Permanent errors" in `zpool status -v`. What does that mean?',
       options: [
-        'Every copy of at least one of its blocks failed its checksum',
+        'No good copy of at least one of its blocks could be read',
         'One disk of the mirror was removed',
         'The file was deleted while it was open',
         'The pool is out of space',
       ],
       answer: 0,
-      explain: 'ZFS ran out of good copies for some block of that file, so it can\'t return correct data. Restore that file from backup.',
+      explain: 'Every copy of some block of that file failed its checksum or couldn\'t be read, so ZFS can\'t return correct data. Restore that file from backup.',
     },
   ],
 
@@ -280,7 +281,7 @@ export const chapter4: ChapterDef = {
         paint()
       }
       const lost = blocks.filter((b) => b.lost).length
-      lastScan = `scrub repaired ${fixed * 128}K in 00:00:0${Math.min(9, Math.round(order.length * 0.2))} with ${lost} errors on ${new Date().toUTCString().slice(0, 25)}`
+      lastScan = `scrub repaired ${fixed * 128}K in 00:00:0${Math.min(9, Math.round(order.length * 0.2))} with ${lost} errors on ${ctime()}`
       term.print(`# scrub finished: ${fixed} bad cop${fixed === 1 ? 'y' : 'ies'} repaired`, fixed ? 'ok' : 'dim')
       scrubbing = false
       scrubCooldown = 8
@@ -408,7 +409,7 @@ export const chapter4: ChapterDef = {
         }
         if (cmd === 'zpool' && a1 === 'scrub') {
           if (!interactive) term.print('Hold on, Ditto has something to show you first.', 'warn')
-          else if (scrubbing || scrubCooldown > 0) term.print(`cannot scrub tank: currently scrubbing`, 'err')
+          else if (scrubbing || scrubCooldown > 0) term.print(`cannot scrub tank: currently scrubbing; use 'zpool scrub -s' to cancel scrub`, 'err')
           else void scrub().catch(() => {})
           return true
         }
@@ -502,7 +503,7 @@ export const chapter4: ChapterDef = {
     await ctx.next('Every damaged copy repaired, with no file ever read. Scrubs run in the background at low priority; many admins schedule one a month.')
 
     // Storm
-    hud.info(panel)
+    hud.info(panel, { expand: true })
     ctx.unlock('zpool-clear')
     term.echo('zpool clear tank')
     cksumErrs[0] = cksumErrs[1] = 0

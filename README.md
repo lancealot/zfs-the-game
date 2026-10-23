@@ -61,6 +61,7 @@ The mechanics follow OpenZFS: real fletcher4 checksums chained through block poi
 To keep things watchable, it simplifies:
 
 - Every block occupies one slot, regardless of size, and pools have a single top-level vdev in the block-tree chapters.
+- The uberblock ring has 8 slots; real vdev labels hold 32 at ashift=12 (128 at ashift=9).
 - The MOS points straight at each dataset's object set, skipping the DSL directory and dataset objects in between.
 - Data blocks hold 64 representative bytes rather than 128 KiB.
 - Timings (disk latency, txg intervals, resilver speed) are illustrative.

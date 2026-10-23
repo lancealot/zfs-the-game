@@ -12,6 +12,8 @@ export interface ActionSpec {
   disabled?: boolean
   hidden?: boolean
   glow?: boolean
+  /** Only shown on phone-sized screens (where side panels are folded away). */
+  narrowOnly?: boolean
   onClick: () => void
 }
 
@@ -106,6 +108,11 @@ export class Hud {
       h('button', { class: 'toggle', 'aria-label': 'Show all objectives', onclick: () => this.objEl.classList.toggle('open') }),
     )
     this.infoEl = h('section', { class: 'info panel' })
+    this.infoEl.addEventListener('click', (e) => {
+      // Tapping the first heading folds or unfolds the panel on narrow screens.
+      const head = this.infoEl.querySelector('h3')
+      if (head && (e.target === head || head.contains(e.target as Node))) this.expandInfo(this.infoEl.classList.contains('collapsed'))
+    })
     this.inspEl = h('aside', { class: 'inspector panel', hidden: true, 'aria-live': 'polite' })
 
     this.dialogWho = h('div', { class: 'who' }, 'Ditto')
@@ -325,7 +332,7 @@ export class Hud {
   private renderAction(id: string) {
     const a = this.actionMap.get(id)!
     const { spec, btn } = a
-    btn.className = `btn btn-stack ${spec.kind ?? ''} ${spec.glow ? 'glow' : ''}`
+    btn.className = `btn btn-stack ${spec.kind ?? ''} ${spec.glow ? 'glow' : ''} ${spec.narrowOnly ? 'narrow-only' : ''}`
     btn.disabled = !!spec.disabled
     btn.hidden = !!spec.hidden
     btn.replaceChildren(h('span', null, spec.label), spec.cmd ? h('span', { class: 'cmd' }, spec.cmd) : '')
@@ -333,10 +340,17 @@ export class Hud {
 
   // ------------------------------------------------------- info / inspect
 
-  info(content: HTMLElement | string | null) {
+  /** The side panel. On phones it starts folded to its first heading unless `expand` is set. */
+  info(content: HTMLElement | string | null, opts: { expand?: boolean } = {}) {
     if (content === null) this.infoEl.replaceChildren()
     else if (typeof content === 'string') this.infoEl.innerHTML = content
     else this.infoEl.replaceChildren(content)
+    this.expandInfo(!!opts.expand)
+  }
+
+  expandInfo(on: boolean) {
+    this.infoEl.classList.toggle('collapsed', !on)
+    this.emitLayout()
   }
 
   inspect(opts: { eyebrow?: string; title: string; body: HTMLElement | string; onClose?: () => void }) {

@@ -53,7 +53,7 @@ export const chapter7: ChapterDef = {
       q: 'Which writes go through the ZIL?',
       options: ['Synchronous writes: fsync, O_SYNC, NFS commits, sync=always', 'All writes', 'Only metadata changes', 'Only writes larger than recordsize'],
       answer: 0,
-      explain: 'Async writes skip the ZIL entirely. They are batched in RAM and written with the next txg.',
+      explain: 'Plain buffered writes don\'t wait for the ZIL; they\'re batched in RAM for the next txg. Log records are committed only when durability is requested, and an fsync() also logs that file\'s earlier buffered writes.',
     },
     {
       q: 'What can a crash cost you with `sync=disabled`?',
@@ -541,7 +541,7 @@ export const chapter7: ChapterDef = {
     await ctx.until(() => latencies.length >= 4)
     ctx.check('sync')
     await ctx.next(
-      'Waiting up to 5 seconds for the next txg would make every commit painfully slow. So ZFS writes a small record to the **ZFS Intent Log** right away, acknowledges, and moves on. The data still goes to its final place with the txg, after which the log record is thrown away.',
+      'Waiting up to 5 seconds for the next txg would make every commit painfully slow. So ZFS writes a small record to the **ZFS Intent Log** right away, acknowledges, and moves on. The data still goes to its final place with the txg, after which the log record is thrown away. (Large sync writes on a pool without a SLOG go straight to their final place, and the log record just points at them.)',
     )
     await ctx.next(
       `Here the ZIL lives on the pool's spinning disks, and each fsync() waits for one: about **${avgLatency().toFixed(1)} ms**. Your database feels sluggish.`,

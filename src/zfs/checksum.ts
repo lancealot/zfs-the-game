@@ -25,7 +25,7 @@ export function fletcher4(buf: Uint8Array): Cksum {
 export const cksumEqual = (x: Cksum, y: Cksum) => x[0] === y[0] && x[1] === y[1] && x[2] === y[2] && x[3] === y[3]
 
 /** zdb style: the four words in hex, colon separated. */
-export const cksumHex = (c: Cksum) => c.map((w) => w.toString(16)).join(':')
+export const cksumHex = (c: Cksum) => c.map((w) => w.toString(16).padStart(16, '0')).join(':')
 
 /** A short tag for labels: the low 32 bits of the last word. */
 export const cksumShort = (c: Cksum) => (c[3] & 0xffffffffn).toString(16).padStart(8, '0')

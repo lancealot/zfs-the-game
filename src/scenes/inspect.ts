@@ -1,6 +1,7 @@
 import { h } from '../ui/dom'
 import { type Blk, type CowPool, type Uber, zdbLine, dvaText, copiesOf, RING } from '../zfs/blocktree'
 import { cksumHex, cksumShort, fletcher4, cksumEqual } from '../zfs/checksum'
+import { ctime } from '../zfs/units'
 
 const KIND_TEXT: Record<Blk['kind'], { title: string; codex: string; blurb: string }> = {
   mos: {
@@ -81,16 +82,16 @@ function parentName(p: Blk) {
 }
 
 export function describeUber(pool: CowPool, u: Uber = pool.uber): HTMLElement {
-  const date = new Date(u.timestamp * 1000).toISOString().replace('T', ' ').slice(0, 19)
+  const date = ctime(new Date(u.timestamp * 1000))
   const rows: Array<[string, string]> = [
     ['ub_magic', '0x00bab10c'],
     ['ub_version', '5000'],
     ['ub_txg', String(u.txg)],
     ['ub_guid_sum', '0x6c4f1b9d02e8a7f3'],
-    ['ub_timestamp', `${u.timestamp} (${date} UTC)`],
+    ['ub_timestamp', `${u.timestamp} (${date})`],
     ['ub_rootbp', `${dvaText(u.root)} → MOS`],
     ['rootbp cksum', cksumShort(u.root.cksum) + '…'],
-    ['ring slot', `${u.txg % RING} of ${RING} (slot = txg mod ${RING})`],
+    ['ring slot', `${u.txg % RING} of ${RING} here (slot = txg mod ${RING}; real labels hold 32 at ashift=12)`],
   ]
   return h(
     'div',
@@ -103,4 +104,23 @@ export function describeUber(pool: CowPool, u: Uber = pool.uber): HTMLElement {
     ),
     h('dl', { class: 'kv' }, ...rows.flatMap(([a, v]) => [h('dt', null, a), h('dd', null, v)])),
   )
+}
+
+/** What `zdb -u tank` prints for the active uberblock. */
+export function zdbUberText(pool: CowPool): string {
+  const u = pool.uber
+  return [
+    'Uberblock:',
+    '        magic = 0000000000bab10c',
+    '        version = 5000',
+    `        txg = ${u.txg}`,
+    '        guid_sum = 7804356107563362291',
+    `        timestamp = ${u.timestamp} UTC = ${ctime(new Date(u.timestamp * 1000))}`,
+    `        bp = ${zdbLine(u.root, cksumHex(u.root.cksum))}`,
+    '        mmp_magic = 00000000a11cea11',
+    '        mmp_delay = 0',
+    '        mmp_valid = 0',
+    '        checkpoint_txg = 0',
+    '        raidz_reflow state=0 off=0',
+  ].join('\n')
 }

@@ -277,14 +277,15 @@ export const chapter1: ChapterDef = {
       }
       // zpool checks replication consistency across everything in the command and the pool.
       const existing = [...vdevs]
+      const mode = vdevs.length ? 'add' : 'create'
       for (const s of specs) {
-        const mm = replicationMismatch(existing, s.type, s.names.length)
+        const mm = replicationMismatch(existing, s.type, s.names.length, mode)
         if (mm && !force) {
           term.print("invalid vdev specification\nuse '-f' to override the following errors:\n" + mm, 'err')
-          if (!fromCli) hud.toast('zpool refuses to mix redundancy levels without -f', 'bad')
+          if (!fromCli) hud.toast('zpool won\'t mix these redundancy levels without -f', 'bad')
           return false
         }
-        if (mm) term.print(`warning: ${mm} (forced with -f)`, 'warn')
+        if (mm && !fromCli) term.print('# forced with -f: this pool is only as safe as its weakest vdev', 'dim')
         existing.push({ type: s.type, disks: s.names.map((n) => byName.get(n)!.spec) })
       }
       const firstCreate = vdevs.length === 0
@@ -293,7 +294,10 @@ export const chapter1: ChapterDef = {
         d.selected = false
         d.view.setSelected(false)
       }
-      if (firstCreate) term.print('# ashift=12 (4 KiB sectors) detected and set for each vdev', 'dim')
+      if (firstCreate) {
+        term.print('# ashift=12 (4 KiB sectors) detected and set for each vdev', 'dim')
+        ctx.unlock('ashift')
+      }
       sound.write()
       for (const s of specs) for (const n of s.names) burst(scope, root, byName.get(n)!.view.position.clone().setY(1), C.uber, 14, 1)
       version++
@@ -317,8 +321,8 @@ export const chapter1: ChapterDef = {
       let force = false
       const probe = [...vdevs]
       for (const s of specs) {
-        if (replicationMismatch(probe, s.type, s.names.length)) force = true
-        probe.push({ type: s.type, disks: [] })
+        if (replicationMismatch(probe, s.type, s.names.length, vdevs.length ? 'add' : 'create')) force = true
+        probe.push({ type: s.type, disks: s.names.map((n) => byName.get(n)!.spec) })
       }
       const verb = vdevs.length === 0 ? 'create' : 'add'
       const specText = specs.map((s) => (s.type === 'disk' ? s.names[0] : `${s.type} ${s.names.join(' ')}`)).join(' ')
@@ -363,27 +367,26 @@ export const chapter1: ChapterDef = {
       const pstate = poolState(vdevs, failed)
       const devs: StatusDev[] = vdevs.map((v, i) => {
         const st = vdevState(v, failed)
-        const leaves = v.disks.map((d) => ({
-          name: d.name,
-          state: failed.has(d.name) ? 'UNAVAIL' : 'ONLINE',
-          note: failed.has(d.name) ? 'cannot open' : undefined,
-        }))
+        // With zed running, a disk yanked from a live system shows up as REMOVED.
+        const leaves = v.disks.map((d) => ({ name: d.name, state: failed.has(d.name) ? 'REMOVED' : 'ONLINE' }))
         if (v.type === 'disk') return leaves[0]
         return { name: names[i], state: st, note: st === 'UNAVAIL' ? 'insufficient replicas' : undefined, children: leaves }
       })
       let status: string | undefined
       let action: string | undefined
       let see: string | undefined
+      let state: string = pstate
       if (pstate === 'DEGRADED') {
-        status = 'One or more devices could not be opened.  Sufficient replicas exist for\nthe pool to continue functioning in a degraded state.'
-        action = "Attach the missing device and online it using 'zpool online'."
-        see = SEE('ZFS-8000-2Q')
+        status = 'One or more devices has been removed by the administrator.\nSufficient replicas exist for the pool to continue functioning in a\ndegraded state.'
+        action = "Online the device using 'zpool online' or replace the device with\n'zpool replace'."
       } else if (pstate === 'UNAVAIL') {
+        // A live pool that loses a whole vdev suspends all I/O.
+        state = 'SUSPENDED'
         status = 'One or more devices are faulted in response to IO failures.'
         action = "Make sure the affected devices are connected, then run 'zpool clear'."
         see = SEE('ZFS-8000-HC')
       }
-      return formatStatus({ pool: POOL, state: pstate, status, action, see, vdevs: devs })
+      return formatStatus({ pool: POOL, state, rootState: pstate, status, action, see, vdevs: devs })
     }
 
     function showStatus(echo = true) {
@@ -404,7 +407,7 @@ export const chapter1: ChapterDef = {
     function zfsList() {
       if (vdevs.length === 0) return term.print('no datasets available')
       const usable = poolStats(vdevs).usableTB * TB
-      const avail = usable * (1 - 1 / 32) // slop space reserve
+      const avail = usable - Math.min(usable / 32, 128 * 2 ** 30) // slop space: 1/32 of the pool, capped at 128 GiB
       term.print(`NAME   USED  AVAIL  REFER  MOUNTPOINT\n${POOL}   480K  ${fmtSize(avail).padStart(5)}    96K  /${POOL}`)
     }
 
@@ -420,7 +423,7 @@ export const chapter1: ChapterDef = {
       sel: h('div', { class: 'note', style: { marginTop: '6px' } }),
     }
     const picker = h('div', { class: 'seg-picker', role: 'group', 'aria-label': 'Vdev type' })
-    const addBtn = h('button', { class: 'btn primary', style: { width: '100%', marginTop: '8px' }, onclick: () => uiAddVdev() }, 'Add vdev')
+    const addBtn = h('button', { class: 'btn primary wide-only', style: { width: '100%', marginTop: '8px' }, onclick: () => uiAddVdev() }, 'Add vdev')
     const buildBox = h('div', null, h('h3', null, 'Vdev type'), picker, statEls.sel, statEls.preview, addBtn)
     const meter = (label: string, val: HTMLElement, fill: HTMLElement) =>
       h('div', { class: 'meter' }, h('div', { class: 'lab' }, h('span', null, label), val), h('div', { class: 'track' }, fill))
@@ -468,6 +471,7 @@ export const chapter1: ChapterDef = {
       }
       addBtn.disabled = mode !== 'build' || n === 0
       addBtn.textContent = vdevs.length ? 'Add vdev to pool' : 'Create pool'
+      hud.updateAction('add', { disabled: mode !== 'build' || n === 0, label: vdevs.length ? 'Add vdev' : 'Create pool', cmd: n ? `${pickType} · ${n} disk${n > 1 ? 's' : ''}` : 'select drives' })
     }
 
     function renderStats() {
@@ -486,6 +490,7 @@ export const chapter1: ChapterDef = {
     }
 
     hud.setActions([
+      { id: 'add', label: 'Add vdev', cmd: 'zpool create / add', kind: 'primary', narrowOnly: true, onClick: uiAddVdev },
       { id: 'status', label: 'Status', cmd: 'zpool status', onClick: () => showStatus() },
       { id: 'destroy', label: 'Destroy pool', cmd: `zpool destroy ${POOL}`, kind: 'danger', onClick: () => destroyPool() },
     ])
@@ -623,7 +628,7 @@ export const chapter1: ChapterDef = {
     pickType = 'mirror'
     renderPanel()
     ctx.say(
-      'Let\'s build the simplest redundant pool. The type is set to **mirror**. Click **two drives** on the shelf, then press **Add vdev**. Or type `zpool create tank mirror sda sdb` in the terminal.',
+      'Let\'s build the simplest redundant pool. The type is set to **mirror**. Click **two drives** on the shelf, then press **Create pool**. Or type `zpool create tank mirror sda sdb` in the terminal.',
     )
     await waitPool(() => {
       if (vdevs.length === 0) return null
@@ -646,7 +651,7 @@ export const chapter1: ChapterDef = {
     ctx.unlock('states', 'zpool-status')
     mode = 'locked'
     await ctx.next(
-      'See the terminal: `zpool status` says the pool is **DEGRADED**. One side is UNAVAIL, but every block still has a good copy on the survivor, so applications keep working. You\'d replace the dead disk and ZFS would [[resilver]] it.',
+      'See the terminal: `zpool status` says the pool is **DEGRADED**. One side shows REMOVED, but every block still has a good copy on the survivor, so applications keep working. You\'d replace the dead disk and ZFS would [[resilver]] it.',
     )
 
     // Step 3: pull both
@@ -656,7 +661,7 @@ export const chapter1: ChapterDef = {
     ctx.check('pull2')
     mode = 'locked'
     await ctx.next(
-      'With both halves gone the mirror has **insufficient replicas**, the pool is **UNAVAIL**, and I/O stops. A mirror only survives losing n−1 of its n disks. Let me put the drives back on the shelf.',
+      'With both halves gone the mirror has **insufficient replicas**, the pool is **UNAVAIL**, and ZFS suspends all I/O to it. A mirror only survives losing n−1 of its n disks. Let me put the drives back on the shelf.',
     )
     destroyPool()
     await ctx.sleep(0.8)
@@ -694,7 +699,7 @@ export const chapter1: ChapterDef = {
         : `RAIDZ2 across 8 disks: **${poolStats(vdevs).usableTB} TB** usable (75% of raw) and any two disks can fail. That's the classic choice for bulk storage.`,
     )
     await ctx.next(
-      'The catch: RAIDZ spreads each block across every disk in the vdev, so for small random I/O the whole vdev behaves roughly like **one disk**. See **Random write IOPS** on the left.',
+      'The catch: RAIDZ spreads each large block across all the disks in the vdev, so for small random I/O the whole vdev behaves roughly like **one disk**. See **Random write IOPS** in the pool panel.',
     )
     mode = 'locked'
     destroyPool()
@@ -736,8 +741,8 @@ export const chapter1: ChapterDef = {
     const pulls = failed.size
     await ctx.next(
       pulls === 2
-        ? 'Two pulls, same mirror. That vdev is gone, and because every file has blocks on **every** vdev, the whole pool is lost. It survived any one failure, but not two in the wrong place.'
-        : `${pulls} pulls, but it can be done in **two**: both halves of the same mirror. Since every file has blocks on every vdev, losing one vdev loses the whole pool.`,
+        ? 'Two pulls, same mirror. That vdev is gone. ZFS spreads data and pool metadata across **every** top-level vdev and can\'t run without all of them, so the whole pool is lost. It survived any one failure, but not two in the wrong place.'
+        : `${pulls} pulls, but it can be done in **two**: both halves of the same mirror. ZFS spreads data and pool metadata across every top-level vdev and can't run without all of them, so losing one vdev loses the whole pool.`,
     )
     await ctx.next(
       'So: redundancy lives **inside** vdevs; the pool adds capacity and speed, never safety. Pools can also hold support vdevs: a `log` device for sync writes, `cache` for reads, `special` for metadata, and hot `spare` disks. You\'ll meet some later.',

@@ -557,7 +557,7 @@ export function zdbLine(b: Blk, cksumText: string) {
   const copies = copiesOf(b)
   const dvas = Array.from({ length: copies }, (_, i) => `DVA[${i}]=${dvaText(b, i)}`).join(' ')
   const fill = b.kind === 'data' ? 1 : b.children.length
-  return `${dvas} [${zdbType(b)}] fletcher4 ${b.comp === 'lz4' ? 'lz4' : 'uncompressed'} LE contiguous unique ${['single', 'double', 'triple'][copies - 1]} size=${b.lsize.toString(16)}L/${b.psize.toString(16)}P birth=${b.birth}L/${b.birth}P fill=${fill} cksum=${cksumText}`
+  return `${dvas} [${zdbType(b)}] fletcher4 ${b.comp === 'lz4' ? 'lz4' : 'uncompressed'} unencrypted LE contiguous unique ${['single', 'double', 'triple'][copies - 1]} size=${b.lsize.toString(16)}L/${b.psize.toString(16)}P birth=${b.birth}L/${b.birth}P fill=${fill} cksum=${cksumText}`
 }
 
 /** Deterministic filler bytes for blocks that aren't pictures or text. */

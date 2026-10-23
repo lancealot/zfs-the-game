@@ -145,7 +145,7 @@ So a file that fits in one block points straight at its data. Anything bigger go
 The checksum field is what makes the tree self-validating: a parent vouches for each of its children.
 
 \`zdb\` prints one like:
-\`DVA[0]=<0:4a2000:20000> [L0 ZFS plain file] fletcher4 lz4 size=20000L/8000P birth=1042L cksum=…\``,
+\`DVA[0]=<0:4a2000:8000> [L0 ZFS plain file] fletcher4 lz4 unencrypted LE contiguous unique single size=20000L/8000P birth=1042L/1042P fill=1 cksum=…\``,
   ),
   E(
     'dva',
@@ -170,14 +170,14 @@ A block pointer has room for three DVAs. Extra copies are [[ditto]] blocks.`,
     'The largest block a file in a dataset can use.',
     `128 KiB by default. Large sequential files (video, backups) do well with 1 MiB records. Databases that do small random I/O prefer a recordsize matching their page size (8–16 KiB). Volumes use the similar \`volblocksize\`.
 
-A file smaller than the recordsize is stored in a single block of just the size it needs, rounded up to the sector size.`,
+A file smaller than the recordsize is stored in a single block of just the size it needs (rounded up to a multiple of 512 bytes); its allocation on disk rounds up to the vdev's sector size.`,
   ),
   E(
     'compression',
     'On-disk format',
     'Compression',
     'Each block is compressed on its own before it is written.',
-    `\`lsize\` is a block's logical size and \`psize\` its physical size after compression. \`compression=on\` means LZ4, fast enough to be nearly free, and it often speeds things up by writing less. zstd trades CPU for better ratios.
+    `\`lsize\` is a block's logical size and \`psize\` its physical size after compression. \`compression=on\` (the default since OpenZFS 2.2) means LZ4, fast enough to be nearly free, and it often speeds things up by writing less. zstd trades CPU for better ratios.
 
 A block that doesn't shrink by at least 12.5% is stored uncompressed, so incompressible data wastes little effort.`,
   ),
@@ -253,7 +253,7 @@ ZFS can, because each read is checked against the checksum held in the parent bl
     'Bad copies are detected and rewritten automatically.',
     `When a read fails its checksum and the vdev has redundancy, ZFS tries the other copies, or reconstructs the block from [[parity]]. It returns the good data to the application and rewrites the bad copy in place.
 
-Each repair is counted in the CKSUM column of \`zpool status\`. Without redundancy ZFS can still detect the error and report the damaged file, but it can't fix it.`,
+Each checksum failure is counted in that device's CKSUM column of \`zpool status\`. Without redundancy ZFS can still detect the error and report the damaged file, but it can't fix it.`,
   ),
   E(
     'scrub',
@@ -346,7 +346,7 @@ Snapshots are read-only, so ransomware running as an ordinary user can't encrypt
     'Replicate snapshots as a stream.',
     `\`zfs send tank/home@b | ssh backup zfs receive pool/home\` copies a snapshot to another pool.
 
-An incremental send (\`zfs send -i @a @b\`) only needs blocks born after @a. ZFS finds them by skipping every subtree whose block pointer has an older birth txg, without comparing any file contents.`,
+An incremental send (\`zfs send -i @a tank/home@b\`) only needs blocks born after @a. ZFS finds them by skipping every subtree whose block pointer has an older birth txg, without comparing any file contents.`,
   ),
 
   // ---------------------------------------------------- Caching and logging
@@ -382,7 +382,7 @@ A SLOG is **not** a write cache. Data still goes from RAM to the pool in the nex
     'Adaptive Replacement Cache: ZFS\'s RAM cache.',
     `The ARC splits cached blocks between two lists. MRU holds blocks used once recently and MFU holds blocks used more than once. [[ghost|Ghost lists]] remember what was recently evicted from each, and the ARC continuously moves its target split between MRU and MFU based on ghost hits.
 
-A one-time scan, like a backup, only churns MRU, so the frequently used working set in MFU survives. That is called scan resistance. The ARC also caches blocks compressed, fitting more in RAM.`,
+A one-time scan, like a backup, only churns MRU, so the frequently used working set in MFU survives. That is called scan resistance. The ARC also caches blocks compressed, fitting more in RAM. (A second access within about 62 ms doesn't count as a repeat, so a read plus its own prefetch won't promote a block to MFU.)`,
   ),
   E(
     'ghost',
@@ -405,7 +405,7 @@ A one-time scan, like a backup, only churns MRU, so the frequently used working 
     'Operations',
     'Device states',
     'ONLINE, DEGRADED, FAULTED, UNAVAIL, OFFLINE, REMOVED.',
-    `**ONLINE**: working normally. **DEGRADED**: a vdev lost a member but still has enough replicas. **FAULTED**: a device was taken out of service after too many errors. **UNAVAIL**: a device can't be opened. **OFFLINE**: taken offline by an admin. **REMOVED**: physically unplugged.
+    `**ONLINE**: working normally. **DEGRADED**: a vdev lost a member but still has enough replicas; a single disk can also be degraded after too many checksum errors. **FAULTED**: a device was taken out of service after too many errors. **UNAVAIL**: a device can't be opened. **OFFLINE**: taken offline by an admin. **REMOVED**: physically unplugged.
 
 When a top-level vdev has insufficient replicas, the pool itself becomes UNAVAIL or SUSPENDED.`,
   ),
@@ -428,7 +428,9 @@ When a top-level vdev has insufficient replicas, the pool itself becomes UNAVAIL
     'Operations',
     'zpool clear',
     'Reset error counters after fixing the cause.',
-    `Use \`zpool clear tank\` after you've fixed what caused the errors, such as a loose cable, and a [[scrub]] has confirmed the data is good. Clearing counters doesn't repair anything; it only resets the bookkeeping.`,
+    `Use \`zpool clear tank\` after you've fixed what caused the errors, such as a loose cable, and a [[scrub]] has confirmed the data is good.
+
+Clearing doesn't repair any data. It resets the error counters, puts FAULTED or DEGRADED devices back into service, and resumes a pool that was suspended by I/O failures. Fix the cause first.`,
   ),
   E(
     'spare',

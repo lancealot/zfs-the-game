@@ -5,6 +5,7 @@ import { C, DriveView, makeLabel, burst, cosmicRay, detach, v3 } from '../engine
 import { Ease } from '../engine/anim'
 import { h } from '../ui/dom'
 import { raidzMap, reconstructPQ, type Cell } from '../zfs/raidz'
+import { ctime } from '../zfs/units'
 
 const CELL_W = 1.5
 const CELL_H = 0.34
@@ -264,6 +265,7 @@ export const chapter5: ChapterDef = {
               }
               return h('div', { class: 'row' }, h('span', null, label), ...bits(m.value).map((b) => h('span', { class: `bit ${b ? 'one' : ''} ${m.kind === 'P' ? 'parity' : ''}` }, String(b))))
             })
+            hud.expandInfo(true)
             puzzleEl.replaceChildren(
               h('h3', { style: { marginTop: '14px' } }, `Rebuild ${missing.kind === 'P' ? 'the parity' : `D${missing.index}`} · round ${round} of 3`),
               h('div', { class: 'bits' }, ...rows),
@@ -309,7 +311,8 @@ export const chapter5: ChapterDef = {
             '  pool: tank',
             ` state: ${dead.size ? 'DEGRADED' : 'ONLINE'}`,
             dead.size ? 'status: One or more devices could not be opened.  Sufficient replicas exist for\n        the pool to continue functioning in a degraded state.' : '',
-            '  scan: none requested',
+            dead.size ? "action: Attach the missing device and online it using 'zpool online'." : '',
+            dead.size ? '   see: https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q' : '',
             'config:',
             '',
             '        NAME        STATE     READ WRITE CKSUM',
@@ -323,7 +326,7 @@ export const chapter5: ChapterDef = {
           return true
         }
         if (cmd === 'zpool' && a1 === 'replace') {
-          if (!dead.size) term.print('cannot replace: no failed device in this pool', 'err')
+          if (!dead.size) term.print('# Ditto: nothing has failed yet. Keep watching!', 'dim')
           else {
             replaceRequested = true
             void a3
@@ -412,7 +415,7 @@ export const chapter5: ChapterDef = {
       r.missing.mat.emissive.set(C.uber)
       r.missing.mat.emissiveIntensity = 0.8
       r.missing.mat.opacity = 0.8
-      if (i === 0) ctx.say('The glowing slab on the dead disk is missing. Its row-mates are in the panel on the right. Fill in the bits, then press **Check**.')
+      if (i === 0) ctx.say('The glowing slab on the dead disk is missing. Its row-mates are in the Vdev panel. Fill in the bits, then press **Check**.')
       else if (r.missing.kind === 'P') ctx.say('This time the dead disk held the **parity** sector. Same rule: make every column even.')
       else ctx.say('Nice. Another row, another missing data sector.')
       await xorPuzzle(r.members, r.missing, i + 1)
@@ -447,7 +450,7 @@ export const chapter5: ChapterDef = {
     dead.delete(victim)
     paintStats()
     ctx.check('resilver')
-    term.print(`  scan: resilvered ${rebuilt * 4}K in 00:00:03 with 0 errors`, 'ok')
+    term.print(`  scan: resilvered ${rebuilt * 4}K in 00:00:03 with 0 errors on ${ctime()}`, 'ok')
     await ctx.next(
       `The resilver rebuilt only the ${rebuilt} sectors that hold data, skipping empty space. A hardware RAID rebuild copies the entire 4 TB disk whether it's used or not, taking around 8 hours. On a mostly empty pool, ZFS finishes in minutes.`,
     )

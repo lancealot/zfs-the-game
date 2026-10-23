@@ -28,6 +28,6 @@ describe('fletcher4', () => {
   })
 
   it('formats like zdb', () => {
-    expect(cksumHex(fletcher4(words(1, 2, 3, 4)))).toBe('a:14:23:38')
+    expect(cksumHex(fletcher4(words(1, 2, 3, 4)))).toBe(['a', '14', '23', '38'].map((x) => x.padStart(16, '0')).join(':'))
   })
 })

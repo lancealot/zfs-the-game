@@ -52,7 +52,7 @@ export const chapter6: ChapterDef = {
       explain: 'A block born after the newest snapshot was never visible to any snapshot, so its space comes back right away.',
     },
     {
-      q: 'What does `zfs send -i @mon @tue` transfer?',
+      q: 'What does `zfs send -i @mon tank/home@tue` transfer?',
       options: [
         'Only blocks born after @mon, found by skipping older subtrees',
         'The whole dataset as of @tue',
@@ -476,13 +476,13 @@ export const chapter6: ChapterDef = {
     const mon = pool.snapshots.find((s) => s.name === 'monday')!
     const tue = pool.snapshots.find((s) => s.name === 'tuesday')!
     await ctx.next(
-      `Last trick: \`zfs send -i @monday @tuesday\` replicates only the changes between snapshots. Which blocks? Exactly those in @tuesday's tree **born after txg ${mon.txg}**. ZFS skips any subtree whose pointer has an older birth txg.`,
+      `Last trick: \`zfs send -i @monday tank/home@tuesday\` replicates only the changes between snapshots. Which blocks? Exactly those in @tuesday's tree **born after txg ${mon.txg}**. ZFS skips any subtree whose pointer has an older birth txg.`,
       'Highlight them',
     )
     const changed = [...pool.reachable([tue.root])].filter((b) => b.birth > mon.txg)
     tree.setLabels('birth')
     tree.highlight(changed, C.zil)
-    term.echo(`zfs send -i ${DS}@monday ${DS}@tuesday | ssh backup zfs recv pool/home`)
+    term.echo(`zfs send -i @monday ${DS}@tuesday | ssh backup zfs recv pool/home`)
     term.print(`# stream contains ${changed.filter((b) => b.kind === 'data').length} data blocks + ${changed.filter((b) => b.kind !== 'data').length} metadata blocks`, 'dim')
     ctx.check('send')
     await ctx.next(

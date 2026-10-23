@@ -4,6 +4,7 @@ import type { ChapterDef, Ctx } from './types'
 import { DriveView, C, makeLabel, burst, v3 } from '../engine/kit'
 import { h, esc } from '../ui/dom'
 import { formatStatus, SEE, type StatusDev } from '../zfs/status'
+import { ctime } from '../zfs/units'
 
 type Dev = { name: string; state: string; read: number; write: number; cksum: number; note?: string }
 
@@ -56,10 +57,10 @@ export const chapter9: ChapterDef = {
       explain: 'Copy-on-write needs free space for every write. Nearly full pools spend more time hunting for space and scatter new blocks.',
     },
     {
-      q: 'What does `zpool clear` repair?',
-      options: ['Nothing: it only resets error counters', 'Every damaged block in the pool', 'Faulted disks', 'Permanent errors in files'],
+      q: 'What does `zpool clear` repair in your data?',
+      options: ['Nothing: it resets error counters and returns devices to service', 'Every damaged block in the pool', 'A physically failing disk', 'Permanent errors in files'],
       answer: 0,
-      explain: 'It is bookkeeping. Repairs come from redundancy (self-healing and scrubs); clear just tells ZFS to forget old counts once you\'ve fixed the cause.',
+      explain: 'Repairs come from redundancy (self-healing and scrubs). Clear resets the counters, puts FAULTED or DEGRADED devices back into service and resumes a suspended pool, so only use it once the cause is fixed.',
     },
   ],
 
@@ -89,7 +90,7 @@ export const chapter9: ChapterDef = {
     placeDrive('sdc', '8 TB', -1.2, -1.2)
     placeDrive('sdd', '8 TB', 0.4, -1.2)
     ;['sdf', 'sdg', 'sdh'].forEach((n, i) => placeDrive(n, '8 TB · new', 2.6 + i * 1.5, 1.5))
-    placeDrive('nvme0n1', 'new', 0.0, 1.6, 'nvme')
+    placeDrive('nvme0n1', 'new', -0.6, 1.6, 'nvme')
     placeDrive('nvme1n1', 'new', 0.9, 1.6, 'nvme')
     const lbl = (text: string, x: number, z: number) => {
       const l = makeLabel(text, 'platter')
@@ -98,8 +99,8 @@ export const chapter9: ChapterDef = {
       root.add(l)
       return l
     }
-    lbl('mirror-0', -4.6, -2.6)
-    lbl('mirror-1', -0.4, -2.6)
+    lbl('mirror-0', -4.6, -3.3)
+    lbl('mirror-1', -0.4, -3.3)
     lbl('spare bay (unused)', 3.0, 3.0)
 
     // ------------------------------------------------------------ pool model
@@ -137,7 +138,6 @@ export const chapter9: ChapterDef = {
       } else if (faulted) {
         status = 'One or more devices are faulted in response to persistent errors.\nSufficient replicas exist for the pool to continue functioning in a\ndegraded state.'
         action = "Replace the faulted device, or use 'zpool clear' to mark the device\nrepaired."
-        see = SEE('ZFS-8000-K4')
       } else if (errs) {
         status = 'One or more devices has experienced an unrecoverable error.  An\nattempt was made to correct the error.  Applications are unaffected.'
         action = "Determine if the device needs to be replaced, and clear the errors\nusing 'zpool clear' or replace the device with 'zpool replace'."
@@ -205,7 +205,7 @@ export const chapter9: ChapterDef = {
         await ctx.sleep(0.06)
       }
       resilvering = null
-      scan = `resilvered 3.1T in 02:41:07 with 0 errors on ${new Date().toUTCString().slice(0, 25)}`
+      scan = `resilvered 3.1T in 02:41:07 with 0 errors on ${ctime()}`
       drives.get(oldDev)!.visible = false
       paintDrives()
     }
@@ -218,7 +218,13 @@ export const chapter9: ChapterDef = {
     let hintsUsed = 0
     hud.info(h('div', null, ticket, hintBox))
 
+    const baseSuggestions = ['zpool status', 'zpool list', 'lsblk', 'dmesg']
+    let suggestions = [...baseSuggestions]
+
     function renderTicket(inc: Incident, n: number) {
+      hud.expandInfo(true)
+      suggestions = [...baseSuggestions]
+      term.setSuggestions(suggestions)
       ticket.replaceChildren(
         h('h3', null, `Incident ${n} of ${incidents.length}`),
         h('div', { style: { fontFamily: 'var(--font-display)', fontSize: '17px', fontWeight: '600', margin: '2px 0 6px' } }, inc.title),
@@ -235,7 +241,11 @@ export const chapter9: ChapterDef = {
             if (!current) return
             if (hintIdx < current.hints.length) {
               hintsUsed++
-              hintBox.append(h('div', { style: { marginTop: '6px', color: 'var(--fg)' }, html: `<b>Hint ${hintIdx + 1}:</b> ${esc(current.hints[hintIdx]).replace(/`([^`]+)`/g, '<code>$1</code>')}` }))
+              const hint = current.hints[hintIdx]
+              hintBox.append(h('div', { style: { marginTop: '6px', color: 'var(--fg)' }, html: `<b>Hint ${hintIdx + 1}:</b> ${esc(hint).replace(/`([^`]+)`/g, '<code>$1</code>')}` }))
+              // Commands named in hints become tappable suggestions (typing is hard on phones).
+              for (const m of hint.matchAll(/`([^`]+)`/g)) if (!suggestions.includes(m[1])) suggestions.push(m[1])
+              term.setSuggestions(suggestions)
               hintIdx++
               if (hintIdx === current.hints.length) hud.updateAction('hint', { disabled: true, label: 'No more hints' })
             }
@@ -269,7 +279,7 @@ export const chapter9: ChapterDef = {
         return true
       }
       if (cmd === 'lsblk') {
-        term.print(['NAME     SIZE TYPE', ...[...drives.keys()].map((n) => `${n.padEnd(8)} ${n.startsWith('nvme') ? '960G' : '7.3T'} disk${free.has(n) ? '   (unused)' : ''}`)].join('\n'))
+        term.print(['NAME     SIZE TYPE', ...[...drives.keys()].map((n) => `${n.padEnd(8)} ${n.startsWith('nvme') ? '894.3G' : '7.3T'} disk${free.has(n) ? '   (unused)' : ''}`)].join('\n'))
         return true
       }
       return false
@@ -299,9 +309,13 @@ export const chapter9: ChapterDef = {
           }
           if (cmd === 'zpool' && sub === 'replace') {
             if (pool !== 'tank') term.print(`cannot open '${pool ?? ''}': no such pool`, 'err')
-            else if (oldD !== 'sdb') term.print(oldD && devs.has(oldD) ? `${oldD} is healthy. Which disk is FAULTED?` : `cannot replace ${oldD ?? ''}: no such device in pool`, 'err')
+            else if (oldD !== 'sdb') {
+              if (oldD && devs.has(oldD)) term.print(`# ${oldD} is healthy. Which disk is FAULTED?`, 'warn')
+              else term.print(`cannot replace ${oldD ?? ''} with ${newD ?? oldD ?? ''}: no such device in pool`, 'err')
+            }
             else if (!newD) term.print('cannot replace sdb with sdb: sdb is busy, or device removal is in progress\n# (the disk in the slot is still the broken one: name a new disk from the bay)', 'err')
-            else if (!free.has(newD) || newD.startsWith('nvme')) term.print(`cannot open '${newD}': no such device in /dev, or not a suitable disk`, 'err')
+            else if (newD.startsWith('nvme') && free.has(newD)) term.print(`cannot replace sdb with ${newD}: device is too small`, 'err')
+            else if (!free.has(newD)) term.print(devs.has(newD) ? `/dev/${newD} is part of active pool 'tank'` : `cannot open '${newD}': no such device in /dev`, 'err')
             else {
               free.delete(newD)
               devs.delete('sdb')
@@ -361,7 +375,7 @@ export const chapter9: ChapterDef = {
               await ctx.sleep(0.08)
             }
             void d
-            scan = `scrub repaired 0B in 03:12:44 with 0 errors on ${new Date().toUTCString().slice(0, 25)}`
+            scan = `scrub repaired 0B in 03:12:44 with 0 errors on ${ctime()}`
             term.print('# scrub finished: 0 errors. The data is fine.', 'ok')
             i2scrub = true
             return true
@@ -393,7 +407,7 @@ export const chapter9: ChapterDef = {
           if (cmd === 'zfs' && sub === 'list') {
             if (argv.includes('snapshot')) {
               term.print(['NAME                              USED  AVAIL  REFER  MOUNTPOINT', ...projSnaps.map((s, i) => `tank/projects@${s}`.padEnd(32) + `  ${['1.2M', '840K', '2.4M', '12K'][i].padStart(4)}      -  48.1G  -`)].join('\n'))
-            } else term.print(`NAME            USED  AVAIL  REFER  MOUNTPOINT\ntank/projects  ${websiteRestored ? '48.1G' : '41.7G'}  5.62T  ${websiteRestored ? '48.1G' : '41.7G'}  /tank/projects`)
+            } else term.print(`NAME            USED  AVAIL  REFER  MOUNTPOINT\ntank/projects  48.1G  5.62T  ${websiteRestored ? '48.1G' : '41.7G'}  /tank/projects`)
             return true
           }
           if (cmd === 'ls') {
@@ -432,8 +446,8 @@ export const chapter9: ChapterDef = {
         objective: 'Incident 4: get the pool back under 80%',
         page: '[ALERT 11:02] tank capacity 94% (threshold 85%)\n[ALERT 11:02] write latency p99 up 6x since Monday',
         hints: [
-          'Space hides in snapshots. Try `zfs list -t snapshot -o name,used -s used`.',
-          'There\'s a 1.9T snapshot left over from a VM upgrade months ago: `zfs destroy tank/vm@before-upgrade`.',
+          'Space hides in snapshots. Try `zfs list -t snapshot -o name,used -S used` (biggest first).',
+          'There\'s a 2.6T snapshot left over from a VM upgrade months ago: `zfs destroy tank/vm@before-upgrade`.',
           'Or add capacity: `zpool add tank mirror sdg sdh` puts two new disks to work as another mirror.',
         ],
         handle: async (argv) => {
@@ -443,7 +457,7 @@ export const chapter9: ChapterDef = {
               term.print(
                 [
                   'NAME                         USED',
-                  ...(snapshotsDeleted ? [] : ['tank/vm@before-upgrade       1.92T']),
+                  ...(snapshotsDeleted ? [] : ['tank/vm@before-upgrade       2.61T']),
                   'tank/db@nightly-1021          88G',
                   'tank/db@nightly-1022          61G',
                   'tank/projects@hourly-1400     12K',
@@ -451,7 +465,7 @@ export const chapter9: ChapterDef = {
               )
             } else
               term.print(
-                `NAME           USED  AVAIL  REFER  MOUNTPOINT\ntank          ${(14.5 * capacity / 100).toFixed(1)}T  ${(14.5 * (100 - capacity) / 100).toFixed(1)}T    96K  /tank\ntank/vm       ${snapshotsDeleted ? '3.61T' : '5.53T'}      -  3.61T  /tank/vm\ntank/db       2.11T      -  1.96T  /tank/db\ntank/projects 48.1G      -  48.1G  /tank/projects`,
+                ((avail) => `NAME           USED  AVAIL  REFER  MOUNTPOINT\ntank          ${(14.5 * capacity / 100).toFixed(1)}T  ${avail}    96K  /tank\ntank/vm       ${snapshotsDeleted ? '3.61T' : '6.22T'}  ${avail}  3.61T  /tank/vm\ntank/db       2.11T  ${avail}  1.96T  /tank/db\ntank/projects 48.1G  ${avail}  48.1G  /tank/projects`)(`${(14.5 * (100 - capacity) / 100).toFixed(1)}T`),
               )
             return true
           }
@@ -459,9 +473,9 @@ export const chapter9: ChapterDef = {
             const t = argv[argv.length - 1]
             if (t === 'tank/vm@before-upgrade') {
               snapshotsDeleted = true
-              capacity = 79 - 3
+              capacity = 76
               paintDrives()
-              term.print('# destroyed tank/vm@before-upgrade: 1.92T freed', 'ok')
+              term.print('# destroyed tank/vm@before-upgrade: 2.61T freed', 'ok')
               i4 = true
             } else if (t?.includes('@')) term.print(`# that snapshot is small; it won't free much. Look for the big one.`, 'warn')
             else term.print(`Destroying a whole dataset? Ditto grabs your wrist. Let's only delete snapshots today.`, 'warn')
@@ -474,7 +488,7 @@ export const chapter9: ChapterDef = {
               mirrors = [...mirrors, rest.slice(1)]
               for (const n of rest.slice(1)) devs.set(n, mk(n))
               await Promise.all(rest.slice(1).map((n, k) => moveDrive(n, v3(2.4 + k * 1.6, 0.3, -1.2))))
-              lbl(`mirror-${mirrors.length - 1}`, 3.2, -2.6)
+              lbl(`mirror-${mirrors.length - 1}`, 3.2, -3.3)
               capacity = 63
               paintDrives()
               term.print('# new vdev added: capacity jumps, and new writes favour the empty mirror', 'ok')
@@ -527,7 +541,7 @@ export const chapter9: ChapterDef = {
             for (const n of names) free.delete(n)
             logs.push(...names)
             await Promise.all(names.map((n, k) => moveDrive(n, v3(5.5 + k * 0.9, 0.3, -1.3))))
-            lbl('logs', 6, -2.6)
+            lbl('logs', 6, -3.3)
             term.print(names.length === 1 ? '# single SLOG added. Works, but a mirrored SLOG avoids losing in-flight commits if it dies during a crash.' : '# mirrored SLOG added', 'ok')
             i5 = true
             return true
@@ -558,7 +572,7 @@ export const chapter9: ChapterDef = {
         'Stuck? Press Hint.',
       ].join('\n'),
     )
-    term.setSuggestions(['zpool status', 'zpool list', 'lsblk', 'dmesg'])
+    term.setSuggestions(baseSuggestions)
 
     // -------------------------------------------------------------- script
     paintDrives()
@@ -591,7 +605,7 @@ export const chapter9: ChapterDef = {
       paintDrives()
       renderTicket(inc, n + 1)
       sound.bad()
-      ctx.say(`**New page.** ${inc.title}. Read the ticket on the right, then investigate.`)
+      ctx.say(`**New page.** ${inc.title}. Read the ticket in the panel, then investigate.`)
       await ctx.until(() => inc.solved())
       await ctx.sleep(0.4)
       ctx.check(inc.id)

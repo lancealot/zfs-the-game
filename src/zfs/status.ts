@@ -25,6 +25,8 @@ export interface StatusModel {
   cache?: StatusDev[]
   spares?: StatusDev[]
   errors?: string
+  /** State shown on the pool's own config row, when it differs from the state line (e.g. SUSPENDED vs UNAVAIL). */
+  rootState?: string
   /** Counters for the pool's own row. */
   poolCounters?: { read: number; write: number; cksum: number }
 }
@@ -43,7 +45,8 @@ export function formatStatus(m: StatusModel): string {
   if (m.status) out.push(...wrapField('status', m.status))
   if (m.action) out.push(...wrapField('action', m.action))
   if (m.see) out.push(...wrapField('see', m.see))
-  out.push(...wrapField('scan', m.scan ?? 'none requested'))
+  // Since OpenZFS 2.0 the scan line is omitted until a scrub or resilver has run.
+  if (m.scan && m.scan !== 'none requested') out.push(...wrapField('scan', m.scan))
   out.push('config:', '')
 
   const rows: Array<{ depth: number; dev: StatusDev }> = []
@@ -51,7 +54,7 @@ export function formatStatus(m: StatusModel): string {
     rows.push({ depth, dev: d })
     for (const c of d.children ?? []) walk(c, depth + 2)
   }
-  const poolRow: StatusDev = { name: m.pool, state: m.state, ...(m.poolCounters ?? {}) }
+  const poolRow: StatusDev = { name: m.pool, state: m.rootState ?? m.state, ...(m.poolCounters ?? {}) }
   rows.push({ depth: 0, dev: poolRow })
   for (const v of m.vdevs) walk(v, 2)
   const sections: Array<[string, StatusDev[] | undefined]> = [

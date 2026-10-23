@@ -94,16 +94,32 @@ export function validateVdev(type: VdevType, count: number): string | null {
   return null
 }
 
-/** zpool refuses to mix redundancy levels without -f; this mimics its message. */
-export function replicationMismatch(existing: VdevSpec[], type: VdevType, count: number): string | null {
+/**
+ * zpool's replication check (OpenZFS 2.1+). Returns its complaint, or null.
+ * `zpool add` compares the new vdev with the pool; `zpool create` compares
+ * the vdevs listed together. A raidzN may sit beside an (N+1)-way mirror,
+ * since both survive N failures.
+ */
+export function replicationMismatch(existing: VdevSpec[], type: VdevType, count: number, mode: 'add' | 'create' = 'add'): string | null {
   if (existing.length === 0) return null
   const prev = existing[0]
   const fam = (t: VdevType) => (t.startsWith('raidz') ? 'raidz' : t)
   const head = 'mismatched replication level:'
-  if (fam(prev.type) !== fam(type)) return `${head} pool uses ${fam(prev.type)} and new vdev is ${fam(type)}`
-  if (PARITY[prev.type] !== PARITY[type]) return `${head} pool uses ${PARITY[prev.type]} device parity and new vdev uses ${PARITY[type]}`
-  if (type !== 'disk' && prev.disks.length !== count)
-    return `${head} pool uses ${prev.disks.length}-way ${fam(type)} and new vdev uses ${count}-way ${fam(type)}`
+  const a = { fam: fam(prev.type), parity: PARITY[prev.type], n: prev.disks.length }
+  const b = { fam: fam(type), parity: PARITY[type], n: count }
+  if ((a.fam === 'raidz' && b.fam === 'mirror') || (a.fam === 'mirror' && b.fam === 'raidz')) {
+    const raidz = a.fam === 'raidz' ? a : b
+    const mirror = a.fam === 'mirror' ? a : b
+    if (raidz.parity === mirror.n - 1) return null
+    return mode === 'add'
+      ? `${head} pool and new vdev with different redundancy, raidz and mirror vdevs, ${raidz.parity} vs. ${mirror.n - 1} (${mirror.n}-way)`
+      : `${head} both mirror and raidz vdevs are present`
+  }
+  if (a.fam !== b.fam) return mode === 'add' ? `${head} pool uses ${a.fam} and new vdev is ${b.fam}` : `${head} both ${a.fam} and ${b.fam} vdevs are present`
+  if (a.parity !== b.parity)
+    return mode === 'add' ? `${head} pool uses ${a.parity} device parity and new vdev uses ${b.parity}` : `${head} both ${a.parity} and ${b.parity} device parity raidz vdevs are present`
+  if (a.fam === 'mirror' && a.n !== b.n)
+    return mode === 'add' ? `${head} pool uses ${a.n}-way mirror and new vdev uses ${b.n}-way mirror` : `${head} both ${a.n}-way and ${b.n}-way mirror vdevs are present`
   return null
 }
 

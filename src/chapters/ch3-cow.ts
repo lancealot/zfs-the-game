@@ -3,7 +3,7 @@ import { v3 } from '../engine/kit'
 import { h } from '../ui/dom'
 import { CowPool, RING, textBytes, type Blk } from '../zfs/blocktree'
 import { TreeView } from '../scenes/treeView'
-import { describeBlock, describeUber } from '../scenes/inspect'
+import { describeBlock, describeUber, zdbUberText } from '../scenes/inspect'
 import { catBlocks, CAT_EDITS, editBytes, drawPixels, NOTES, bytesToText } from '../content/files'
 import { formatStatus } from '../zfs/status'
 
@@ -380,13 +380,12 @@ export const chapter3: ChapterDef = {
         if (cmd === 'cat') {
           const f = (a1 ?? '').split('/').pop()
           if (f === 'notes.txt') term.print(bytesToText(pool.contents(DS, 'notes.txt', 0)))
-          else if (f === 'cat.png') term.print('(binary; see the picture on the right)', 'dim')
+          else if (f === 'cat.png') term.print('(binary; see the picture in the panel)', 'dim')
           else term.print(`cat: ${a1 ?? ''}: No such file or directory`, 'err')
           return true
         }
         if (cmd === 'zdb' && a1 === '-u') {
-          const u = pool.uber
-          term.print(`Uberblock:\n        magic = 0000000000bab10c\n        version = 5000\n        txg = ${u.txg}\n        timestamp = ${u.timestamp} UTC = ${new Date(u.timestamp * 1000).toUTCString()}`)
+          term.print(zdbUberText(pool))
           return true
         }
         if (cmd === 'zpool' && a1 === 'status') {
